@@ -37,7 +37,7 @@ st.markdown("""
 def load_data():
     # GitHub raw URL을 사용하세요
     # 예: 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/online_gaming_behavior_dataset.csv'
-    url = 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/online_gaming_behavior_dataset.csv'
+    url = 'https://raw.githubusercontent.com/new000way/data_visualization_project/refs/heads/main/online_gaming_behavior_dataset.csv'
     
     try:
         df = pd.read_csv(url)
