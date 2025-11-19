@@ -34,7 +34,7 @@ st.markdown("""
 @st.cache_data
 def load_data():
     # ⚠️ 사용자가 요청한 GitHub URL로 데이터를 로드합니다.
-    data_url = "https://raw.githubusercontent.com/datasets/data/main/online_gaming_behavior_dataset.csv"
+    data_url = "https://raw.githubusercontent.com/new000way/data_visualization_project/main/online_gaming_behavior_dataset.csv"
 
     try:
         df = pd.read_csv(data_url)
