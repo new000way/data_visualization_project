@@ -356,7 +356,7 @@ if df is not None:
 
 
     # ----------------------------------------------------
-    # 🚫 사용자 이탈 예측 모델 (Tab 5: 내용 변경)
+    # 🚫 사용자 이탈 예측 모델 (Tab 5: 내용 변경 및 오류 수정)
     # ----------------------------------------------------
     with tab5:
         st.header("🚫 사용자 이탈 예측 모델 (User Churn Prediction)")
@@ -379,8 +379,24 @@ if df is not None:
         ]
         target = 'Churn'
         
-        X = filtered_df[features]
-        y = filtered_df[target]
+        # --- 오류 수정 시작: NaN 값 처리 ---
+        # 모델 학습에 사용될 데이터만 복사
+        df_model = filtered_df[features + [target]].copy()
+        
+        # 결측치 확인 및 처리 (ValueError의 주요 원인)
+        nan_count_before = df_model.isnull().sum().sum()
+        if nan_count_before > 0:
+            st.info(f"데이터에서 총 {nan_count_before}개의 결측치(NaN)가 발견되어 모델 학습 전에 해당 행을 제거합니다.")
+            df_model.dropna(inplace=True)
+        
+        # NaN 제거 후 데이터가 비어 있는지 다시 확인
+        if df_model.empty:
+            st.warning("데이터 클리닝 후 남은 데이터가 없어 모델 학습을 진행할 수 없습니다.")
+            st.stop()
+            
+        X = df_model[features]
+        y = df_model[target]
+        # --- 오류 수정 끝 ---
         
         # 2. 전처리 파이프라인 구축
         numeric_features = ['Age', 'PlayTimeHours', 'SessionsPerWeek', 'AvgSessionDurationMinutes', 'PlayerLevel', 'AchievementsUnlocked']
@@ -396,9 +412,10 @@ if df is not None:
 
         # 3. 모델 정의 및 학습
         model = Pipeline(steps=[('preprocessor', preprocessor),
-                                ('classifier', LogisticRegression(solver='liblinear', random_state=42))])
+                                 ('classifier', LogisticRegression(solver='liblinear', random_state=42))])
         
         # 데이터 분할 (train/test)
+        # 이제 X와 y는 결측치가 제거된 클린 데이터입니다.
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         st.subheader("모델 학습 및 성능 평가 (Logistic Regression)")
@@ -427,8 +444,8 @@ if df is not None:
 
                 st.subheader("혼동 행렬")
                 conf_df = pd.DataFrame(conf_mat, 
-                                        index=['실제 Active (0)', '실제 Churn (1)'], 
-                                        columns=['예측 Active (0)', '예측 Churn (1)'])
+                                       index=['실제 Active (0)', '실제 Churn (1)'], 
+                                       columns=['예측 Active (0)', '예측 Churn (1)'])
                 st.dataframe(conf_df)
 
             with col_rep:
@@ -448,10 +465,13 @@ if df is not None:
             
             # 원핫인코딩된 특성 이름을 가져오기
             try:
+                # OneHotEncoder의 feature names를 가져옵니다.
+                # 'remainder='passthrough'를 사용하므로, 인코딩되지 않은 컬럼은 없습니다.
                 cat_feature_names = list(model.named_steps['preprocessor'].named_transformers_['cat'].get_feature_names_out(categorical_features))
             except AttributeError:
                  cat_feature_names = []
             
+            # 전체 특성 이름 조합
             feature_names = numeric_features + cat_feature_names
             
             if len(feature_names) == len(classifier.coef_[0]):
