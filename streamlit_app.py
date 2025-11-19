@@ -32,7 +32,7 @@ st.markdown("""
 # 데이터 로드 및 전처리 함수 (캐싱 적용)
 @st.cache_data
 def load_data():
-    data_url = "https://raw.githubusercontent.com/new000way/data_visualization_project/main/online_gaming_behavior_dataset.csv"
+    data_url = "https://raw.githubusercontent.com/new000way/data_visualization_project/refs/heads/main/online_gaming_behavior_datasets.csv"
 
     try:
         df = pd.read_csv(data_url)
