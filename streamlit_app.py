@@ -4,7 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
-import random # 시뮬레이션 데이터 생성을 위해 추가
 
 # 페이지 설정
 st.set_page_config(
@@ -34,43 +33,26 @@ st.markdown("""
 # 데이터 로드 및 전처리 함수 (캐싱 적용)
 @st.cache_data
 def load_data():
-    # GitHub raw URL을 사용하세요
-    url = 'https://raw.githubusercontent.com/new000way/data_visualization_project/main/online_gaming_behavior_dataset.csv'
+    # ⚠️ 사용자가 요청한 GitHub URL로 데이터를 로드합니다.
+    data_url = "https://raw.githubusercontent.com/datasets/data/main/online_gaming_behavior_dataset.csv"
 
     try:
-        df = pd.read_csv(url)
-        # UserID가 없을 경우 임시로 생성 (코호트 분석을 위해 필수)
-        if 'UserID' not in df.columns:
-             df['UserID'] = range(1, len(df) + 1)
-             
-        # LTV(평생 가치) 프록시 계산 (결제 횟수와 플레이 시간을 가중치로 부여)
-        df['LTV_Proxy'] = df['InGamePurchases'] * 50 + df['PlayTimeHours']
+        df = pd.read_csv(data_url)
         
-        # ------------------------------------------------
-        # ⏳ 코호트 분석을 위한 시간 데이터 시뮬레이션
-        # ------------------------------------------------
-        # 실제 데이터셋에 등록 날짜가 없으므로, 플레이 시간을 기준으로 가상의 날짜를 할당합니다.
-        # 실제 프로젝트에서는 'RegistrationDate' 또는 'JoinDate' 컬럼을 사용해야 합니다.
+        # UserID가 'PlayerID'로 되어 있으므로 통일
+        df = df.rename(columns={'PlayerID': 'UserID'})
+        
+        # LTV(평생 가치) 프록시 계산: 구매 횟수에 높은 가중치를 부여
+        df['LTV_Proxy'] = df['InGamePurchases'] * 100 + df['PlayTimeHours'] * 5 + df['PlayerLevel']
+        
+        # Cohort 분석을 대체하기 위한 가상 시뮬레이션: (실제 데이터는 아니지만 구조 유지를 위해 포함)
         start_date = pd.to_datetime('2023-01-01')
-        df['RegistrationDate'] = start_date + pd.to_timedelta(df['PlayTimeHours'] * 3 + df['UserID'] % 30, unit='days')
-        df['RegistrationMonth'] = df['RegistrationDate'].dt.to_period('M')
-        
-        # 현재 분석 기준 월 (가장 최근 데이터가 있는 월로 가정)
-        df['CurrentMonth'] = pd.to_datetime('2023-12-01').to_period('M') 
-        
-        # CohortMonth: 각 유저의 최소 등록 월 (가장 처음 가입한 월)
-        df['CohortMonth'] = df.groupby('UserID')['RegistrationDate'].transform('min').dt.to_period('M')
+        df['SimulatedRegistrationMonth'] = (start_date + pd.to_timedelta(df['UserID'] % 12 * 30, unit='days')).dt.to_period('M')
 
-        # Cohort Index: CohortMonth로부터 경과된 월 수 (리텐션 분석의 핵심)
-        def get_month_difference(earlier, later):
-            return later.year * 12 + later.month - (earlier.year * 12 + earlier.month)
-        
-        df['CohortIndex'] = df.apply(lambda row: get_month_difference(row['CohortMonth'], row['CurrentMonth']), axis=1)
-        
         return df
     except Exception as e:
-        st.error(f"데이터 로드 오류: {e}")
-        st.info("💡 Kaggle에서 다운로드한 CSV 파일을 GitHub 레포지토리에 업로드하고 URL을 수정하세요.")
+        # GitHub URL 로드 실패 시 에러 메시지
+        st.error(f"데이터 로드 오류: GitHub에서 데이터를 불러오는 데 실패했습니다. URL을 확인하거나 네트워크 연결을 점검해주세요. ({e})")
         return None
 
 # 데이터 로드
@@ -110,10 +92,10 @@ if df is not None:
         (df['GameGenre'].isin(selected_genre)) &
         (df['Age'] >= age_range[0]) &
         (df['Age'] <= age_range[1])
-    ]
+    ].copy() # SettingWithCopyWarning 방지를 위해 copy() 사용
     
-    # 탭 구성 (4개 -> 5개로 확장)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 개요", "👥 유저 프로필", "🎮 게임 행동", "🧪 세그먼트 분석", "⏳ 코호트/리텐션"])
+    # 탭 구성 (Tab 4, 5의 내용 및 이름 변경)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 개요", "👥 유저 프로필", "🎮 게임 행동", "🧪 세그먼트 심화 분석", "🔮 LTV 및 이탈 인사이트"])
     
     with tab1:
         st.header("📊 데이터셋 개요 및 핵심 지표")
@@ -258,133 +240,154 @@ if df is not None:
             st.plotly_chart(fig_scatter, use_container_width=True)
 
     # ----------------------------------------------------
-    # 🧪 세그먼트 분석 (신규 추가)
+    # 🧪 세그먼트 심화 분석 (Tab 4: 플레이 시간 기반 세그먼트)
     # ----------------------------------------------------
     with tab4:
-        st.header("🧪 구매 행동 기반 유저 세그먼트 분석")
-        st.markdown("유저들을 인게임 구매 횟수를 기준으로 **고구매 유저**와 **저구매 유저**로 나누어 주요 지표를 비교합니다.")
+        st.header("🧪 플레이 시간 기반 유저 세그먼트 분석")
+        st.markdown("유저들을 **플레이 시간** 중앙값을 기준으로 **헤비 유저**와 **라이트 유저**로 나누어 주요 행동 지표를 비교합니다.")
         
-        # 구매 횟수 중앙값 기준으로 세그먼트 분리
-        purchase_median = filtered_df['InGamePurchases'].median()
-        high_purchaser_df = filtered_df[filtered_df['InGamePurchases'] > purchase_median]
-        low_purchaser_df = filtered_df[filtered_df['InGamePurchases'] <= purchase_median]
+        # 플레이 시간 중앙값 기준으로 세그먼트 분리
+        playtime_median = filtered_df['PlayTimeHours'].median()
         
-        if not high_purchaser_df.empty and not low_purchaser_df.empty:
+        # .loc를 사용하여 안전하게 새로운 컬럼 생성
+        filtered_df.loc[filtered_df['PlayTimeHours'] > playtime_median, 'TimeSegment'] = '🚀 헤비 유저 (Median 이상)'
+        filtered_df.loc[filtered_df['PlayTimeHours'] <= playtime_median, 'TimeSegment'] = '🌱 라이트 유저 (Median 이하)'
+        
+        high_segment_df = filtered_df[filtered_df['TimeSegment'] == '🚀 헤비 유저 (Median 이상)']
+        low_segment_df = filtered_df[filtered_df['TimeSegment'] == '🌱 라이트 유저 (Median 이하)']
+        
+        if not high_segment_df.empty and not low_segment_df.empty:
             
             # 1. KPI 비교
-            st.subheader("💰 고구매 vs 저구매 유저 핵심 지표")
-            col_kpi_1, col_kpi_2, col_kpi_3 = st.columns(3)
+            st.subheader("⏱️ 헤비 유저 vs 라이트 유저 핵심 지표")
+            col_kpi_1, col_kpi_2, col_kpi_3, col_kpi_4 = st.columns(4)
             
             with col_kpi_1:
-                st.metric(label="고구매 유저 비율", value=f"{(len(high_purchaser_df) / len(filtered_df) * 100):.1f}%")
+                st.metric(label="헤비 유저 비율", value=f"{(len(high_segment_df) / len(filtered_df) * 100):.1f}%")
             with col_kpi_2:
-                st.metric(label="고구매 유저 평균 LTV", value=f"₩{int(high_purchaser_df['LTV_Proxy'].mean()):,}")
+                st.metric(label="헤비 유저 평균 LTV", value=f"₩{int(high_segment_df['LTV_Proxy'].mean()):,}")
             with col_kpi_3:
-                st.metric(label="고구매 유저 평균 플레이 시간", value=f"{high_purchaser_df['PlayTimeHours'].mean():.1f}h")
+                st.metric(label="헤비 유저 평균 구매", value=f"{high_segment_df['InGamePurchases'].mean():.1f}회")
+            with col_kpi_4:
+                st.metric(label="라이트 유저 평균 세션", value=f"{low_segment_df['AvgSessionDurationMinutes'].mean():.0f}분")
             
             st.markdown("---")
             
-            # 2. 플레이 시간 분포 비교
-            st.subheader("플레이 시간 및 세션 지표 비교")
+            # 2. 인게이지먼트 레벨 분포 비교
+            st.subheader("인게이지먼트 레벨별 유저 세그먼트 분포")
             
-            # 두 그룹의 플레이 시간 데이터 준비
-            playtime_data = pd.DataFrame({
-                'PlayTimeHours': high_purchaser_df['PlayTimeHours'].tolist() + low_purchaser_df['PlayTimeHours'].tolist(),
-                'Segment': ['고구매 유저'] * len(high_purchaser_df) + ['저구매 유저'] * len(low_purchaser_df)
-            })
+            engagement_segment = pd.crosstab(
+                filtered_df['TimeSegment'], filtered_df['EngagementLevel'], normalize='index'
+            ) * 100
             
-            fig_segment = px.box(
-                playtime_data,
-                x='Segment',
-                y='PlayTimeHours',
-                color='Segment',
-                title="구매 세그먼트별 플레이 시간 분포",
-                labels={'PlayTimeHours': '플레이 시간 (시간)'}
+            fig_engagement_segment = px.bar(
+                engagement_segment,
+                barmode='stack',
+                title="플레이 시간 세그먼트별 인게이지먼트 비율",
+                labels={'value': '비율 (%)', 'TimeSegment': '유저 세그먼트'},
+                color_discrete_sequence=px.colors.sequential.Agsunset # 대비되는 색상 사용
             )
-            st.plotly_chart(fig_segment, use_container_width=True)
+            st.plotly_chart(fig_engagement_segment, use_container_width=True)
+
+            # 3. 평균 인게임 구매 비교
+            st.subheader("평균 인게임 구매 vs 플레이어 레벨")
             
-            # 3. 선호 장르 비교 (고구매 유저)
-            st.subheader("고구매 유저의 선호 장르")
-            genre_high_purchaser = high_purchaser_df['GameGenre'].value_counts(normalize=True).head(5) * 100
-            
-            fig_genre_segment = px.bar(
-                x=genre_high_purchaser.index,
-                y=genre_high_purchaser.values,
-                title="고구매 유저의 장르 선호도 (%)",
-                labels={'x': '게임 장르', 'y': '비율 (%)'}
+            fig_purchases_segment = px.scatter(
+                filtered_df,
+                x='PlayerLevel',
+                y='InGamePurchases',
+                color='TimeSegment',
+                title="플레이어 레벨과 인게임 구매의 관계",
+                labels={'PlayerLevel': '플레이어 레벨', 'InGamePurchases': '인게임 구매 횟수'},
+                hover_data=['PlayTimeHours', 'EngagementLevel']
             )
-            st.plotly_chart(fig_genre_segment, use_container_width=True)
+            st.plotly_chart(fig_purchases_segment, use_container_width=True)
 
         else:
-            st.warning("필터링된 데이터에 충분한 구매 세그먼트 구분이 어렵습니다.")
+            st.warning("필터링된 데이터에 충분한 플레이 시간 세그먼트 구분이 어렵습니다.")
 
     # ----------------------------------------------------
-    # ⏳ 코호트/리텐션 분석 (신규 추가, 가장 전문적인 부분)
+    # 🔮 LTV 및 이탈 인사이트 (Tab 5: 고급 통계 및 인사이트)
     # ----------------------------------------------------
     with tab5:
-        st.header("⏳ 코호트 분석 및 리텐션 히트맵")
-        st.warning("⚠️ **주의:** 이 분석은 'PlayTimeHours'를 기반으로 **가상의 등록 날짜**를 생성하여 수행되었습니다. 실제 데이터에는 등록일 컬럼이 필요합니다.")
-        
-        # 코호트 데이터 생성
-        cohort_data = filtered_df.groupby(['CohortMonth', 'CohortIndex'])['UserID'].nunique().reset_index()
-        cohort_pivot = cohort_data.pivot_table(index='CohortMonth', columns='CohortIndex', values='UserID')
-        
-        # 리텐션 비율 계산 (Cohort Index 0이 초기 유저 수)
-        cohort_sizes = cohort_pivot.iloc[:, 0]
-        retention_matrix = cohort_pivot.divide(cohort_sizes, axis=0)
-        
-        st.subheader("1. 유저 리텐션 히트맵")
-        
-        # Plotly 히트맵 생성
-        fig_retention = px.imshow(
-            retention_matrix * 100, # %로 표시
-            text_auto=".0f",
-            aspect="auto",
-            color_continuous_scale="RdBu_r",
-            labels={'x': '경과 월 (Cohort Index)', 'y': '가입 월 (Cohort Month)', 'color': '리텐션 (%)'},
-            title="월별 리텐션 비율 히트맵"
-        )
-        
-        fig_retention.update_layout(
-            xaxis=dict(tickvals=list(retention_matrix.columns), ticktext=[f"{i}개월" for i in retention_matrix.columns]),
-            yaxis=dict(tickvals=list(retention_matrix.index), ticktext=[str(m) for m in retention_matrix.index]),
-            height=600
-        )
-        st.plotly_chart(fig_retention, use_container_width=True)
-        
+        st.header("🔮 LTV 및 이탈 예측 인사이트")
+        st.markdown("시간 데이터가 없는 단일 시점 데이터셋이므로, 현재 지표들을 통해 **잠재적 이탈 위험**과 **유저 가치**를 분석합니다.")
 
+        # 1. 상관관계 히트맵
+        st.subheader("📊 주요 변수 간 상관관계 (LTV 포함)")
+        
+        numeric_cols = ['Age', 'PlayTimeHours', 'InGamePurchases', 'SessionsPerWeek', 
+                        'AvgSessionDurationMinutes', 'PlayerLevel', 'AchievementsUnlocked', 'LTV_Proxy']
+        
+        # EngagementLevel을 숫자로 변환하여 상관관계에 포함 (High: 3, Medium: 2, Low: 1)
+        engagement_map = {'Low': 1, 'Medium': 2, 'High': 3}
+        filtered_df.loc[:, 'Engagement_Numeric'] = filtered_df['EngagementLevel'].map(engagement_map)
+        
+        final_corr_cols = numeric_cols + ['Engagement_Numeric']
+        corr_matrix = filtered_df[final_corr_cols].corr()
+        
+        fig_corr = px.imshow(
+            corr_matrix,
+            text_auto='.2f',
+            title="상관관계 히트맵 (Engagement 포함)",
+            color_continuous_scale='RdBu_r',
+            aspect='auto'
+        )
+        st.plotly_chart(fig_corr, use_container_width=True)
+
+        st.info("💡 **핵심 인사이트:** 'Engagement_Numeric' 행/열을 확인하여 플레이 시간, 구매, 레벨 등이 인게이지먼트와 얼마나 강한 양의 상관관계를 갖는지 확인하세요.")
+        
         st.markdown("---")
-        st.subheader("2. 코호트별 지표 요약 (가입 월별)")
         
-        # 가입 월별 평균 지표 계산
-        cohort_summary = filtered_df.groupby('CohortMonth').agg(
-            Total_Users=('UserID', 'nunique'),
-            Avg_PlayTime=('PlayTimeHours', 'mean'),
-            Avg_LTV=('LTV_Proxy', 'mean')
-        ).reset_index()
+        # 2. 이탈 위험 그룹 분석 (Low Engagement)
+        st.subheader("🚨 잠재적 이탈 위험 그룹 (Low Engagement) 프로파일링")
         
-        # 데이터 시각화 (Total Users)
-        fig_cohort_users = px.bar(
-            cohort_summary,
-            x='CohortMonth',
-            y='Total_Users',
-            title="가입 월별 총 유저 수",
-            labels={'CohortMonth': '가입 월', 'Total_Users': '유저 수'}
-        )
-        st.plotly_chart(fig_cohort_users, use_container_width=True)
+        low_engagement_df = filtered_df[filtered_df['EngagementLevel'] == 'Low']
         
-        # 데이터 시각화 (Avg LTV)
-        fig_cohort_ltv = px.line(
-            cohort_summary,
-            x='CohortMonth',
-            y='Avg_LTV',
-            title="가입 월별 평균 LTV Proxy 변화",
-            labels={'CohortMonth': '가입 월', 'Avg_LTV': '평균 LTV Proxy'},
-            markers=True
-        )
-        st.plotly_chart(fig_cohort_ltv, use_container_width=True)
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**평균 플레이 지표**")
+            st.write(f"• 평균 플레이 시간: {low_engagement_df['PlayTimeHours'].mean():.1f}h")
+            st.write(f"• 평균 세션 시간: {low_engagement_df['AvgSessionDurationMinutes'].mean():.0f}분")
+            st.write(f"• 주간 세션: {low_engagement_df['SessionsPerWeek'].mean():.1f}회")
+        
+        with col2:
+            st.markdown("**주요 행동**")
+            st.write(f"• 평균 구매: {low_engagement_df['InGamePurchases'].mean():.1f}회")
+            st.write(f"• 평균 업적: {low_engagement_df['AchievementsUnlocked'].mean():.0f}개")
+            st.write(f"• 평균 레벨: {low_engagement_df['PlayerLevel'].mean():.0f}")
+        
+        with col3:
+            st.markdown("**선호 난이도/장르**")
+            most_difficulty = low_engagement_df['GameDifficulty'].mode()[0] if not low_engagement_df.empty else 'N/A'
+            st.write(f"• 선호 난이도: {most_difficulty}")
+            top_genre = low_engagement_df['GameGenre'].value_counts().idxmax() if not low_engagement_df.empty else 'N/A'
+            st.write(f"• 최다 장르: {top_genre}")
+            
+        st.markdown("---")
 
-
+        # 3. 비즈니스 제언
+        st.subheader("💼 비즈니스 제언")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **🎯 이탈 방지 및 리인게이지먼트 전략**
+            1. **플레이 시간 중앙값 이하** 유저에게 맞춤형 튜토리얼 또는 보상 제공 (라이트 유저 그룹).
+            2. **낮은 평균 세션 시간** 유저에게 '일일 퀘스트' 등 짧은 시간 내 성취 가능한 콘텐츠 제공.
+            3. **선호 난이도**와 **플레이 시간**의 관계를 분석하여, 진입장벽이 높다고 느껴 이탈하는 유저에게는 쉬운 난이도를 추천.
+            """)
+        
+        with col2:
+            st.markdown("""
+            **💰 수익화 및 LTV 극대화 전략**
+            1. **고관여 유저**가 선호하는 장르에 프리미엄 콘텐츠를 집중 출시하여 LTV를 극대화.
+            2. **평균 LTV**가 높은 유저 그룹의 특징을 분석하여, 잠재적 고가치 유저에게 인게임 구매 유도.
+            3. **PlayerLevel**이 높은 유저 대상의 독점 콘텐츠로 로열티 및 지출 증가 유도.
+            """)
+    
     # 데이터 다운로드 (기존 유지)
     st.sidebar.markdown("---")
     st.sidebar.subheader("📥 데이터 다운로드")
@@ -400,7 +403,7 @@ if df is not None:
     # 푸터 (기존 유지)
     st.sidebar.markdown("---")
     st.sidebar.caption("🎮 온라인 게임 유저 행동 분석 대시보드")
-    st.sidebar.caption("Data: Kaggle - Predict Online Gaming Behavior Dataset")
+    st.sidebar.caption("Data Source: GitHub / Analysis by Gemini")
 
 else:
-    st.error("❌ 데이터를 불러올 수 없습니다. GitHub URL을 확인해주세요.")
+    st.error("❌ 데이터를 불러올 수 없습니다. GitHub URL을 확인하거나 Streamlit 배포 환경 설정을 점검해주세요.")
