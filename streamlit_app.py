@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+from math import exp # math.exp를 사용하여 Exp(B) 계산
 
 # 머신러닝 (ML) 모델링을 위한 라이브러리 추가
 from sklearn.model_selection import train_test_split
@@ -34,15 +35,26 @@ st.markdown("""
     [data-testid="stMetricValue"] {
         font-size: 2.5rem !important;
     }
+    .risk-factor {
+        color: #cc0000;
+        font-weight: bold;
+    }
+    .retention-factor {
+        color: #008000;
+        font-weight: bold;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # 데이터 로드 및 전처리 함수 (캐싱 적용)
 @st.cache_data
 def load_data():
+    # 실제 데이터셋 URL을 사용하거나, 로컬 파일을 가정합니다.
+    # GitHub URL이 작동하지 않을 경우를 대비하여 로컬 파일명을 주석으로 남깁니다.
     data_url = "https://raw.githubusercontent.com/new000way/data_visualization_project/refs/heads/main/online_gaming_behavior_datasets.csv"
 
     try:
+        # 데이터가 이미 로드된 것으로 가정하고, 이 코드를 유지합니다.
         df = pd.read_csv(data_url)
         
         # UserID가 'PlayerID'로 되어 있으므로 통일
@@ -57,7 +69,7 @@ def load_data():
         
         return df
     except Exception as e:
-        st.error(f"데이터 로드 오류: GitHub에서 데이터를 불러오는 데 실패했습니다. ({e})")
+        st.error(f"데이터 로드 오류: 데이터를 불러오는 데 실패했습니다. ({e})")
         return None
 
 # 데이터 로드
@@ -99,22 +111,20 @@ if df is not None:
         (df['Age'] <= age_range[1])
     ].copy()
     
-    # 탭 구성 (제목 변경)
-    # ----------------------------------------------------------------------
-    # 탭 제목 수정: tab4 (헤비/라이트 -> 참여율 증진) / tab5 (유저 가치 -> 이탈 예측 모델)
-    # ----------------------------------------------------------------------
+    # 탭 구성
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 개요", 
         "👥 유저 프로필", 
         "🎮 게임 행동", 
-        "📈 참여율 증진 요인 분석", 
+        "🚀 참여율 증진 요인 분석", # Tab 4 제목 변경 유지
         "🚫 사용자 이탈 예측 모델"
     ])
     
+    # Tab 1: 개요
     with tab1:
         st.header("📊 데이터셋 개요 및 핵심 지표")
         
-        # 주요 지표 (구매율로 변경)
+        # 주요 지표
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
@@ -126,7 +136,6 @@ if df is not None:
             high_engagement = (filtered_df['EngagementLevel'] == 'High').sum()
             st.metric("고관여 유저", f"{high_engagement:,}")
         with col4:
-            # 구매율로 변경
             purchase_rate = (filtered_df['InGamePurchases'] == 1).mean() * 100
             st.metric("구매 유저 비율", f"{purchase_rate:.1f}%")
         with col5:
@@ -161,9 +170,7 @@ if df is not None:
             )
             st.plotly_chart(fig_bar, use_container_width=True)
     
-    # ----------------------------------------------------
-    # 👥 유저 프로필 분석 (Tab 2: 변화 없음)
-    # ----------------------------------------------------
+    # Tab 2: 유저 프로필 분석 (변화 없음)
     with tab2:
         st.header("👥 유저 프로필 분석")
         
@@ -205,9 +212,7 @@ if df is not None:
             )
             st.plotly_chart(fig_age_engagement, use_container_width=True)
 
-    # ----------------------------------------------------
-    # 🎮 게임 행동 패턴 분석 (Tab 3: 변화 없음)
-    # ----------------------------------------------------
+    # Tab 3: 게임 행동 패턴 분석 (난이도 차트 제거)
     with tab3:
         st.header("🎮 게임 행동 패턴 분석")
         
@@ -225,7 +230,7 @@ if df is not None:
             st.plotly_chart(fig_playtime, use_container_width=True)
         
         with col2:
-            # 구매율로 변경
+            # 구매율
             purchase_by_engagement = filtered_df.groupby('EngagementLevel')['InGamePurchases'].apply(
                 lambda x: (x == 1).mean() * 100
             ).reset_index()
@@ -244,43 +249,29 @@ if df is not None:
             fig_purchases.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
             st.plotly_chart(fig_purchases, use_container_width=True)
         
-        # 게임 난이도 vs 인게이지먼트
-        col1, col2 = st.columns(2)
+        # 주간 세션 수 vs 평균 세션 시간 (Tab 3에 유지)
+        st.subheader("주간 세션 수 vs 평균 세션 시간")
+        fig_scatter = px.scatter(
+            filtered_df, x='SessionsPerWeek', y='AvgSessionDurationMinutes', color='EngagementLevel',
+            title="주간 세션 수 vs 평균 세션 시간",
+            labels={'SessionsPerWeek': '주간 세션 수', 'AvgSessionDurationMinutes': '평균 세션 시간 (분)'},
+            opacity=0.6, size='PlayTimeHours', hover_data=['Age', 'Gender', 'GameGenre'],
+            category_orders={"EngagementLevel": ['Low', 'Medium', 'High']},
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
         
-        with col1:
-            difficulty_engagement = pd.crosstab(
-                filtered_df['GameDifficulty'], filtered_df['EngagementLevel'], normalize='index'
-            ) * 100
-            
-            fig_difficulty = px.bar(
-                difficulty_engagement, barmode='group', title="게임 난이도별 인게이지먼트 분포 (%)",
-                labels={'value': '비율 (%)', 'GameDifficulty': '게임 난이도'},
-                color_discrete_sequence=px.colors.qualitative.Bold
-            )
-            st.plotly_chart(fig_difficulty, use_container_width=True)
-        
-        with col2:
-            # 주간 세션 수 vs 평균 세션 시간
-            fig_scatter = px.scatter(
-                filtered_df, x='SessionsPerWeek', y='AvgSessionDurationMinutes', color='EngagementLevel',
-                title="주간 세션 수 vs 평균 세션 시간",
-                labels={'SessionsPerWeek': '주간 세션 수', 'AvgSessionDurationMinutes': '평균 세션 시간 (분)'},
-                opacity=0.6, size='PlayTimeHours', hover_data=['Age', 'Gender', 'GameGenre'],
-                category_orders={"EngagementLevel": ['Low', 'Medium', 'High']},
-            )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+        st.markdown(
+            "**인사이트:** 플레이 시간이나 구매력 등 개별 행동 지표가 인게이지먼트 레벨과 밀접한 관계가 있음을 보여주며, 이는 전반적인 유저 참여 전략 수립에 중요합니다."
+        )
 
-    # ----------------------------------------------------
-    # 📈 참여율 증진 요인 분석 (Tab 4: 내용 변경)
-    # ----------------------------------------------------
+    # Tab 4: 참여율 증진 요인 분석 (난이도, 장르 추가)
     with tab4:
-        st.header("📈 참여율 증진 요인 분석: 무엇이 유저 참여를 높이는가?")
+        st.header("🚀 참여율 증진 요인 분석: 무엇이 유저 참여를 높이는가?")
         st.markdown("사용자의 참여 수준('Low' -> 'High')에 영향을 미치는 주요 요인들을 분석하여, 리텐션 및 몰입 증진 전략의 기반을 마련합니다.")
         
-        # 1. 플레이어 레벨 vs 참여율
+        # 1. 플레이어 레벨 vs 참여율 (유지)
         st.subheader("1. 플레이어 레벨 (PlayerLevel)별 참여 수준 분포")
         
-        # High, Medium, Low 순으로 시각화를 위해 순서 정렬
         fig_level = px.box(
             filtered_df, 
             x='EngagementLevel', 
@@ -293,10 +284,10 @@ if df is not None:
         )
         st.plotly_chart(fig_level, use_container_width=True)
         st.markdown(
-            "**인사이트:** 'High' 유저의 레벨 중앙값과 'Low' 유저의 레벨 중앙값 차이가 크다면, **레벨업 인센티브** 및 **초기 성장 구간** 관리가 핵심입니다."
+            "**인사이트:** 'High' 유저의 레벨 중앙값이 'Low' 유저보다 현저히 높다면, **레벨업 인센티브**와 **초기 성장 구간** 관리를 통해 신규 유저의 이탈을 방지하고 참여를 유도해야 합니다."
         )
 
-        # 2. 업적 달성 vs 참여율
+        # 2. 업적 달성 vs 참여율 (유지)
         st.subheader("2. 잠금 해제된 업적 수 (AchievementsUnlocked) vs 참여율")
         fig_achievements = px.violin(
             filtered_df, 
@@ -312,52 +303,43 @@ if df is not None:
         )
         st.plotly_chart(fig_achievements, use_container_width=True)
         st.markdown(
-            "**인사이트:** 업적 달성 수가 참여 수준과 강한 상관관계를 보인다면, **참여 유도형 업적 시스템**을 신규/복귀 유저에게 집중적으로 노출해야 합니다."
+            "**인사이트:** 업적 달성 수가 참여 수준과 강한 상관관계를 보인다면, **참여 유도형 업적 시스템**을 신규/복귀 유저에게 집중적으로 노출하여 지속적인 목표를 제공해야 합니다."
         )
 
-        # 3. 인게임 구매 vs 참여율 상세 분석
-        st.subheader("3. 구매 유저의 행동 지표 분석 (Purchases vs Engagement)")
+        # 3. 게임 난이도 vs 인게이지먼트 (Tab 3에서 이동)
+        st.subheader("3. 게임 난이도 (GameDifficulty)별 참여 수준 분포 (%)")
+        difficulty_engagement = pd.crosstab(
+            filtered_df['GameDifficulty'], filtered_df['EngagementLevel'], normalize='index'
+        ) * 100
         
-        purchase_df = filtered_df[filtered_df['InGamePurchases'] == 1]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            avg_duration_by_engagement = purchase_df.groupby('EngagementLevel')['AvgSessionDurationMinutes'].mean().reset_index()
-            fig_duration = px.bar(
-                avg_duration_by_engagement,
-                x='EngagementLevel',
-                y='AvgSessionDurationMinutes',
-                title="구매 유저의 평균 세션 지속 시간",
-                labels={'AvgSessionDurationMinutes': '평균 세션 시간 (분)'},
-                color='EngagementLevel',
-                category_orders={"EngagementLevel": ['Low', 'Medium', 'High']},
-                color_discrete_map={'Low': '#EF553B', 'Medium': '#FFC400', 'High': '#636EFA'}
-            )
-            st.plotly_chart(fig_duration, use_container_width=True)
-
-        with col2:
-            avg_sessions_by_engagement = purchase_df.groupby('EngagementLevel')['SessionsPerWeek'].mean().reset_index()
-            fig_sessions = px.bar(
-                avg_sessions_by_engagement,
-                x='EngagementLevel',
-                y='SessionsPerWeek',
-                title="구매 유저의 주간 평균 세션 수",
-                labels={'SessionsPerWeek': '주간 세션 수 (회)'},
-                color='EngagementLevel',
-                category_orders={"EngagementLevel": ['Low', 'Medium', 'High']},
-                color_discrete_map={'Low': '#EF553B', 'Medium': '#FFC400', 'High': '#636EFA'}
-            )
-            st.plotly_chart(fig_sessions, use_container_width=True)
-        
+        fig_difficulty = px.bar(
+            difficulty_engagement, barmode='group', title="게임 난이도별 인게이지먼트 분포 (%)",
+            labels={'value': '비율 (%)', 'GameDifficulty': '게임 난이도'},
+            color_discrete_sequence=px.colors.qualitative.Bold
+        )
+        st.plotly_chart(fig_difficulty, use_container_width=True)
         st.markdown(
-            "**인사이트:** 구매 이력이 있는 유저조차도 'Low' 참여 수준을 보이는 경우, 이들을 위한 **구매 기반 리텐션 콘텐츠** (예: 특별 미션, 독점 이벤트)가 필요합니다."
+            "**인사이트:** 특정 난이도('Hard' 또는 'Easy')에서 'High' 인게이지먼트 유저의 비율이 높다면, **해당 난이도 선호 그룹**에 맞는 맞춤형 콘텐츠 업데이트가 효과적일 수 있습니다. 'Medium'이 가장 분산되어 있다면, 난이도 세분화가 필요합니다."
+        )
+
+        # 4. 게임 장르 vs 인게이지먼트 (추가 요청)
+        st.subheader("4. 게임 장르 (GameGenre)별 참여 수준 분포 (%)")
+        genre_engagement = pd.crosstab(
+            filtered_df['GameGenre'], filtered_df['EngagementLevel'], normalize='index'
+        ) * 100
+
+        fig_genre_engagement = px.bar(
+            genre_engagement, barmode='group', title="게임 장르별 인게이지먼트 분포 (%)",
+            labels={'value': '비율 (%)', 'GameGenre': '게임 장르'},
+            color_discrete_sequence=px.colors.qualitative.G10
+        )
+        st.plotly_chart(fig_genre_engagement, use_container_width=True)
+        st.markdown(
+            "**인사이트:** 'High' 인게이지먼트 유저가 특정 장르(예: 'RPG')에 집중되어 있다면, **해당 장르의 핵심 매커니즘**을 다른 장르에 부분적으로 차용하거나, 해당 장르 유저를 위한 **크로스 프로모션**을 기획하는 것이 참여율 증진에 도움이 될 수 있습니다."
         )
 
 
-    # ----------------------------------------------------
-    # 🚫 사용자 이탈 예측 모델 (Tab 5: 내용 변경 및 오류 수정)
-    # ----------------------------------------------------
+    # Tab 5: 사용자 이탈 예측 모델 (로지스틱 회귀 보고서 추가, 특성 중요도 제거)
     with tab5:
         st.header("🚫 사용자 이탈 예측 모델 (User Churn Prediction)")
         st.markdown("저관여 유저(Engagement Level = 'Low')를 **이탈 위험 사용자(Churn=1)**로 정의하고, 로지스틱 회귀 모델을 통해 이탈 가능성을 예측합니다. 이를 통해 선제적인 리텐션 대상자를 파악할 수 있습니다.")
@@ -370,6 +352,7 @@ if df is not None:
             st.warning("필터링된 데이터가 없어 모델 학습을 진행할 수 없습니다.")
             st.stop()
             
+        # .loc를 사용하여 SettingWithCopyWarning 방지
         filtered_df.loc[:, 'Churn'] = filtered_df['EngagementLevel'].apply(lambda x: 1 if x == 'Low' else 0)
         
         features = [
@@ -379,43 +362,37 @@ if df is not None:
         ]
         target = 'Churn'
         
-        # --- 오류 수정 시작: NaN 값 처리 ---
-        # 모델 학습에 사용될 데이터만 복사
         df_model = filtered_df[features + [target]].copy()
         
-        # 결측치 확인 및 처리 (ValueError의 주요 원인)
+        # 결측치 처리
         nan_count_before = df_model.isnull().sum().sum()
         if nan_count_before > 0:
             st.info(f"데이터에서 총 {nan_count_before}개의 결측치(NaN)가 발견되어 모델 학습 전에 해당 행을 제거합니다.")
             df_model.dropna(inplace=True)
         
-        # NaN 제거 후 데이터가 비어 있는지 다시 확인
         if df_model.empty:
             st.warning("데이터 클리닝 후 남은 데이터가 없어 모델 학습을 진행할 수 없습니다.")
             st.stop()
             
         X = df_model[features]
         y = df_model[target]
-        # --- 오류 수정 끝 ---
         
         # 2. 전처리 파이프라인 구축
         numeric_features = ['Age', 'PlayTimeHours', 'SessionsPerWeek', 'AvgSessionDurationMinutes', 'PlayerLevel', 'AchievementsUnlocked']
-        categorical_features = ['Gender', 'Location', 'GameGenre', 'GameDifficulty']
-
+        categorical_features = ['Gender', 'Location', 'GameGenre', 'GameDifficulty', 'InGamePurchases'] # InGamePurchases는 0/1이지만 OHE로 처리하여 Exp(B) 해석을 단순화
+        
         preprocessor = ColumnTransformer(
             transformers=[
                 ('num', StandardScaler(), numeric_features),
-                ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+                ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features)
             ],
-            remainder='passthrough'
+            remainder='drop' # 나머지 컬럼은 버림
         )
 
         # 3. 모델 정의 및 학습
         model = Pipeline(steps=[('preprocessor', preprocessor),
                                  ('classifier', LogisticRegression(solver='liblinear', random_state=42))])
         
-        # 데이터 분할 (train/test)
-        # 이제 X와 y는 결측치가 제거된 클린 데이터입니다.
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         st.subheader("모델 학습 및 성능 평가 (Logistic Regression)")
@@ -424,7 +401,6 @@ if df is not None:
             with st.spinner('모델 학습 및 평가 중...'):
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
-                # y_proba = model.predict_proba(X_test)[:, 1] # Churn (1) 확률
                 
                 # 성능 지표
                 accuracy = accuracy_score(y_test, y_pred)
@@ -444,8 +420,8 @@ if df is not None:
 
                 st.subheader("혼동 행렬")
                 conf_df = pd.DataFrame(conf_mat, 
-                                       index=['실제 Active (0)', '실제 Churn (1)'], 
-                                       columns=['예측 Active (0)', '예측 Churn (1)'])
+                                        index=['실제 Active (0)', '실제 Churn (1)'], 
+                                        columns=['예측 Active (0)', '예측 Churn (1)'])
                 st.dataframe(conf_df)
 
             with col_rep:
@@ -458,49 +434,68 @@ if df is not None:
                 """)
 
             st.markdown("---")
-            st.subheader("특성 중요도 분석 (Top 10)")
+            # --- 로지스틱 회귀분석 해석 보고서 (Exp(B)) ---
+            st.subheader("📊 이탈 위험 요인 상세 분석 보고서 (로지스틱 회귀 계수 Exp(B) 기반)")
             
             # 특성 중요도 추출 (로지스틱 회귀 계수 사용)
             classifier = model.named_steps['classifier']
             
-            # 원핫인코딩된 특성 이름을 가져오기
+            # 전체 특성 이름 가져오기
             try:
-                # OneHotEncoder의 feature names를 가져옵니다.
-                # 'remainder='passthrough'를 사용하므로, 인코딩되지 않은 컬럼은 없습니다.
-                cat_feature_names = list(model.named_steps['preprocessor'].named_transformers_['cat'].get_feature_names_out(categorical_features))
+                feature_names = numeric_features + list(model.named_steps['preprocessor'].named_transformers_['cat'].get_feature_names_out(categorical_features))
             except AttributeError:
-                 cat_feature_names = []
-            
-            # 전체 특성 이름 조합
-            feature_names = numeric_features + cat_feature_names
+                 feature_names = [] # 오류 방지용 임시 처리
             
             if len(feature_names) == len(classifier.coef_[0]):
                 coefficients = pd.Series(classifier.coef_[0], index=feature_names)
                 
-                # 계수의 절대값으로 정렬 (가장 큰 영향력을 가진 특성)
-                top_n = 10
-                top_features = coefficients.abs().sort_values(ascending=False).head(top_n).index
-                top_coefficients = coefficients[top_features]
-                
-                fig_importance = px.bar(
-                    top_coefficients,
-                    x=top_coefficients.index,
-                    y=top_coefficients.values,
-                    title=f"이탈 예측 영향 상위 {top_n}개 특성 (로지스틱 회귀 계수)",
-                    labels={'index': '특성', 'y': '계수 (영향력)'},
-                    color=top_coefficients.values,
-                    color_continuous_scale=px.colors.diverging.RdBu
-                )
-                fig_importance.update_layout(xaxis={'categoryorder':'total descending'}, coloraxis_showscale=False)
-                st.plotly_chart(fig_importance, use_container_width=True)
+                # Exp(B) (오즈비) 계산
+                df_results = pd.DataFrame({
+                    '변수': feature_names,
+                    'B (회귀 계수)': classifier.coef_[0],
+                    'Exp(B) (오즈비)': np.exp(classifier.coef_[0])
+                })
 
-                st.markdown(f"""
-                **해석:**
-                - 계수 값이 **양수(+)** 일수록 해당 특성은 이탈(Churn=1) 확률을 **높입니다.**
-                - 계수 값이 **음수(-)** 일수록 해당 특성은 이탈(Churn=1) 확률을 **낮춥니다** (즉, 활동 유지에 기여합니다).
+                # 해석 필드 생성
+                df_results['요인 유형'] = df_results['Exp(B) (오즈비)'].apply(lambda x: '잔존 요인 (보호)' if x < 1.0 else '이탈 위험 요인')
+                df_results['오즈 변화율 (%)'] = df_results['Exp(B) (오즈비)'].apply(lambda x: f"{abs(round((x - 1) * 100, 1)):.1f}% {'감소' if x < 1.0 else '증가'}")
+                
+                # 유의미한 변수 (회귀 계수의 절대값이 큰 상위 20개만 표시)
+                # Sig. 값을 알 수 없으므로, 절대값으로 판단하고 중요도 순으로 정렬합니다.
+                df_results['abs_B'] = df_results['B (회귀 계수)'].abs()
+                df_results = df_results.sort_values(by='abs_B', ascending=False).head(20).drop(columns=['abs_B'])
+
+                # 시각화를 위한 필터링 및 컬럼 순서 조정
+                df_interpretation = df_results[['변수', 'B (회귀 계수)', 'Exp(B) (오즈비)', '요인 유형', '오즈 변화율 (%)']].copy()
+                
+                # 스타일링 함수 정의 (잔존/위험 요인에 따라 색상 부여)
+                def highlight_factor(s):
+                    is_risk = s['요인 유형'] == '이탈 위험 요인'
+                    is_retention = s['요인 유형'] == '잔존 요인 (보호)'
+                    color = ''
+                    if is_risk:
+                        color = 'background-color: #ffe8e8; font-weight: bold; color: #cc0000' # 연한 빨강
+                    elif is_retention:
+                        color = 'background-color: #e8ffe8; font-weight: bold; color: #008000' # 연한 초록
+                    
+                    return [color if col in ['변수', '요인 유형', '오즈 변화율 (%)'] else '' for col in df_interpretation.columns]
+
+                st.dataframe(
+                    df_interpretation.style.apply(highlight_factor, axis=1).format({'B (회귀 계수)': "{:.4f}", 'Exp(B) (오즈비)': "{:.3f}"}),
+                    height=400,
+                    use_container_width=True
+                )
+                
+                st.markdown("""
+                ### 💡 Exp(B) (오즈비) 해석 원칙
+                이탈을 종속변수(1)로 정의했습니다.
+                - **Exp(B) < 1.0 (잔존 요인):** 변수 값이 증가할 때, **이탈할 오즈(확률)가 감소**합니다. (고객 잔존에 기여)
+                - **Exp(B) > 1.0 (이탈 위험 요인):** 변수 값이 증가할 때, **이탈할 오즈(확률)가 증가**합니다. (고객 이탈 위험 증가)
+                - **변수 해석 주의:** 원핫인코딩된 변수(예: GameGenre_Strategy)는 기준 장르 대비 해당 장르를 선택했을 때의 이탈 오즈 변화를 의미합니다.
                 """)
             else:
-                st.error("특성 이름과 계수 개수가 일치하지 않아 중요도를 분석할 수 없습니다.")
+                st.error("특성 이름과 계수 개수가 일치하지 않아 로지스틱 회귀 계수를 분석할 수 없습니다.")
+            # --- 로지스틱 회귀분석 해석 보고서 끝 ---
 
 
         except Exception as e:
